@@ -1,0 +1,12 @@
+.idea/
+.venv
+__pycache__/
+
+*.csv
+*.png
+*.jpg
+*.ics
+
+!assets/*
+
+custom_hosts
