@@ -1,21 +1,48 @@
+import re
 import socket
-import struct
 from pprint import pprint
 
 from dnslib import DNSRecord, DNSQuestion, RR, QTYPE, A
 
-from utils import parse_query
-
-DNS_SERVER_ADDRESS = '127.0.0.1'
-BLOCK_IP_ADDR = "0.0.0.0"
-
 REDIRECT_DNS_IP = "192.168.1.1"
-DNS_PORT = 53
+
+HOST_IP = '127.0.0.1'
+HOST_PORT = 53
 MSS = 1024
+RESPONSE_TTL = 60
 
 
-def print_log(ip_addr, qtype: str | None, qname, atype: str | None, is_redirected: bool = False):
-    print(f"{qtype:<6} {qname:<30} = {ip_addr:<30} | ({qtype:<5} -> {str(atype):<5})", end="")
+def print_log(dns_record: DNSRecord, qname: str, matched_wildcard: str | None, is_redirected: bool = False):
+    def resources_types_to_str(resources: list[RR]) -> str:
+        map_f = lambda x: QTYPE[x.qtype if isinstance(x, DNSQuestion) else x.rtype]
+        return ",".join((map(map_f, resources)))
+
+    def limit_str(s: str, maxlen: int) -> str:
+        if len(s) > maxlen:
+            return s[:maxlen - 2] + ".."
+        return s
+
+    qtypes_str = resources_types_to_str(dns_record.questions)
+    atypes_str = resources_types_to_str(dns_record.rr)
+
+    if dns_record.rr:
+        ip_addr_str = str(dns_record.a.rdata)
+    else:
+        ip_addr_str = ""
+
+    if not is_redirected:
+        ip_addr_str += f" {{{matched_wildcard or 'M'}}})"
+
+    ip_addr_maxlen = 35
+    ip_addr_str = limit_str(ip_addr_str, ip_addr_maxlen)
+
+    qname_maxlen = 30
+    qname = limit_str(qname, qname_maxlen)
+
+    atypes_maxlen = 15
+    atypes_str = limit_str(atypes_str, atypes_maxlen)
+
+    print(f"{qtypes_str:<5} {qname:<{qname_maxlen}} = {ip_addr_str:<{ip_addr_maxlen}} | ({qtypes_str:<5} -> {atypes_str:<{atypes_maxlen}})", end="")
 
     if is_redirected:
         print(f" | -> {REDIRECT_DNS_IP}")
@@ -23,53 +50,57 @@ def print_log(ip_addr, qtype: str | None, qname, atype: str | None, is_redirecte
         print()
 
 
-def handle_dns_request(data: bytes, _: str):
-    dns_record = DNSRecord.parse(data)
+def match_by_any_wildcard(wildcard_dict: dict[str, str], match_qname: str):
+    # import pdb; pdb.set_trace()
+    for (i_wildcard, i_ip) in wildcard_dict.items():
+        regex_str_i = f"^{i_wildcard}$" \
+            .replace(".", r"\.") \
+            .replace("*", ".*")
 
-    dns_question: DNSQuestion = dns_record.questions[0]
-    qtype = dns_question.qtype
+        if re.compile(regex_str_i).match(match_qname):
+            return i_wildcard, i_ip
+
+    return None, None
+
+
+def handle_dns_request(data: bytes, _: str):
+    dns_resp = DNSRecord.parse(data)
+
+    dns_question: DNSQuestion = dns_resp.questions[0]
     qname = str(dns_question.qname)[:-1]  # Remove "." in the end
 
     is_redirected = False
 
-    if qname in exact_match_table:
-        ip_addr = exact_match_table[qname]
+    matched_wildcard, matched_ip = match_by_any_wildcard(wildcard_match_table, qname)
 
-        # print(qtype)
-        reply = dns_record.reply()
-        if qtype == QTYPE.A:
-            reply.add_answer(RR(qname, qtype, rdata=A(ip_addr), ttl=60))
+    if matched_ip or qname in exact_match_table:
+        matched_ip_addr = matched_ip or exact_match_table[qname]
+
+        reply = dns_resp.reply()
+
+        reply.add_answer(RR(qname, QTYPE.A, rdata=A(matched_ip_addr), ttl=RESPONSE_TTL))
 
         response_data = reply.pack()
-        dns_record = reply
+        dns_resp = reply
     else:
         # Redirect to default DNS server
         dns_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        dns_sock.sendto(data, (REDIRECT_DNS_IP, DNS_PORT))
+        dns_sock.sendto(data, (REDIRECT_DNS_IP, HOST_PORT))
 
         response_data, _ = dns_sock.recvfrom(MSS)
-        dns_record = DNSRecord.parse(response_data)
+        dns_resp = DNSRecord.parse(response_data)
 
         is_redirected = True
 
-    # PRINTING TO LOG
-    if dns_record.rr:
-        ip_addr_str = str(dns_record.a.rdata)
-        atype = QTYPE[dns_record.a.rtype]
-    else:
-        ip_addr_str = ""
-        atype = None
-
-    print_log(ip_addr_str, QTYPE[qtype], qname, atype, is_redirected)
-
+    print_log(dns_resp, qname, matched_wildcard, is_redirected)
     return response_data
 
 
 def server_main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind((DNS_SERVER_ADDRESS, DNS_PORT))
+    sock.bind((HOST_IP, HOST_PORT))
 
-    print(f"BIND: {DNS_SERVER_ADDRESS}:{DNS_PORT}")
+    print(f"BIND: {HOST_IP}:{HOST_PORT}")
 
     while True:
         data, addr = sock.recvfrom(MSS)
@@ -89,10 +120,10 @@ if __name__ == "__main__":
         entries_list = map(str.split, list(lines))
 
         for (ip, match_str) in entries_list:
-            if "*" not in match_str:
-                exact_match_table[match_str] = ip
-            else:
+            if any(s in match_str for s in ["*", "?", "("]):
                 wildcard_match_table[match_str] = ip
+            else:
+                exact_match_table[match_str] = ip
 
     pprint(exact_match_table, width=1)
     pprint(wildcard_match_table, width=1)
