@@ -1,6 +1,5 @@
 import re
 import socket
-from dataclasses import dataclass
 
 from dnslib import (
     QTYPE,
@@ -18,12 +17,6 @@ RESPONSE_TTL = 60
 
 class RedirectToDefaultServer(Exception):
     pass
-
-
-@dataclass
-class HandleResult:
-    response_record: DNSRecord
-    matched_regex: str | None
 
 
 def send_and_recv_data(data: bytes, target_host: str, target_port: int) -> bytes:

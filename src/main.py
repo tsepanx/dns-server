@@ -19,7 +19,7 @@ from utils import (
     match_by_any_regex,
     print_log,
     print_match_table,
-    send_and_recv_data, HandleResult,
+    send_and_recv_data,
 )
 
 match_table: dict[str, str] = dict()
