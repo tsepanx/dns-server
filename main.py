@@ -1,5 +1,4 @@
 import socket
-from pprint import pprint
 
 from dnslib import (
     QTYPE,
@@ -10,17 +9,26 @@ from dnslib import (
 )
 
 from utils import (
+    DEFAULT_DNS_IP,
+    DNS_PORT,
     HOST_IP,
-    HOST_PORT,
     MSS,
-    REDIRECT_DNS_IP,
     RESPONSE_TTL,
     build_match_table,
     match_by_any_regex,
     print_log,
+    print_match_table,
 )
 
 match_table: dict[str, str] = dict()
+
+
+def send_and_recv_data(data: bytes, target_host: str, target_port: int) -> bytes:
+    dns_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    dns_sock.sendto(data, (target_host, target_port))
+
+    response_data, _ = dns_sock.recvfrom(MSS)
+    return response_data
 
 
 def handle_dns_request(data: bytes, _: str):
@@ -40,10 +48,8 @@ def handle_dns_request(data: bytes, _: str):
         is_redirected = False
     else:
         # Redirect to default DNS server
-        dns_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        dns_sock.sendto(data, (REDIRECT_DNS_IP, HOST_PORT))
+        response_data = send_and_recv_data(data, DEFAULT_DNS_IP, DNS_PORT)
 
-        response_data, _ = dns_sock.recvfrom(MSS)
         dns_resp = DNSRecord.parse(response_data)
         is_redirected = True
 
@@ -53,9 +59,10 @@ def handle_dns_request(data: bytes, _: str):
 
 def server_main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind((HOST_IP, HOST_PORT))
+    sock.bind((HOST_IP, DNS_PORT))
 
-    print(f"BIND: {HOST_IP}:{HOST_PORT}\n")
+    print(f"DEFAULT SERVER: {DEFAULT_DNS_IP}")
+    print(f"BIND: {HOST_IP}:{DNS_PORT}\n")
 
     while True:
         data, addr = sock.recvfrom(MSS)
@@ -68,6 +75,6 @@ if __name__ == "__main__":
     with open("./custom_hosts", "r") as fin:
         match_table = build_match_table(fin.readlines())
 
-    pprint(match_table, width=1)
+    print_match_table(match_table)
 
     server_main()

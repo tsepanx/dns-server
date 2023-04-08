@@ -7,9 +7,9 @@ from dnslib import (
     DNSRecord,
 )
 
-REDIRECT_DNS_IP = "192.168.1.1"
+DEFAULT_DNS_IP = "192.168.1.1"
 HOST_IP = "127.0.0.1"
-HOST_PORT = 53
+DNS_PORT = 53
 MSS = 1024
 RESPONSE_TTL = 60
 
@@ -29,35 +29,38 @@ def print_log(
     qtypes_str = resources_types_to_str(dns_record.questions)
     atypes_str = resources_types_to_str(dns_record.rr)
 
-    if dns_record.rr:
-        ip_addr_str = str(dns_record.a.rdata)
+    answers_ipv4 = list(filter(lambda x: x.rtype == QTYPE.A, dns_record.rr))
+    # if dns_record.rr:
+    if answers_ipv4:
+        resp_ip = str(answers_ipv4[0].rdata)
+        # resp_ip = str(list(map(lambda x: x.rdata, dns_record.rr)))
+        # resp_ip = str(dns_record.a.rdata)
     else:
-        ip_addr_str = ""
+        resp_ip = ""
 
-    if not is_redirected:
-        ip_addr_str += f" '{matched_regex or 'M'}'"
+    resp_ip_maxlen = 25
+    resp_ip = limit_str(resp_ip, resp_ip_maxlen)
 
-    ip_addr_maxlen = 35
-    ip_addr_str = limit_str(ip_addr_str, ip_addr_maxlen)
+    matched_regex_maxlen = 30
+    if is_redirected:
+        matched_regex = ""
+    else:
+        matched_regex = limit_str(matched_regex, matched_regex_maxlen)
 
     qname_maxlen = 30
     qname = limit_str(qname, qname_maxlen)
 
-    atypes_maxlen = 15
+    atypes_maxlen = 30
     atypes_str = limit_str(atypes_str, atypes_maxlen)
 
     print(
         f"{qtypes_str:<5} "
         f"{qname:<{qname_maxlen}} = "
-        f"{ip_addr_str:<{ip_addr_maxlen}} | "
-        f"({qtypes_str:<5} -> {atypes_str:<{atypes_maxlen}})",
-        end="",
+        f"{resp_ip:<{resp_ip_maxlen}} | "
+        f"{matched_regex:<{matched_regex_maxlen}} | "
+        f"{qtypes_str:<5} -> {atypes_str:<{atypes_maxlen}}",
+        # end="",
     )
-
-    if is_redirected:
-        print(f" | -> {REDIRECT_DNS_IP}")
-    else:
-        print()
 
 
 def match_by_any_regex(regex_dict: dict[str, str], match_by: str):
@@ -96,3 +99,11 @@ def build_match_table(file_lines: list[str]) -> dict[str, str]:
         match_table[match_regex_i] = match_res_i
 
     return match_table
+
+
+def print_match_table(match_table: dict[str, str]):
+    row_1_maxlen = 25
+    row_2_maxlen = 20
+    print(f"{'REGEX':<{row_1_maxlen}} | {'MATCH':<{row_2_maxlen}}\n")
+    print("\n".join([f"{a:<{row_1_maxlen}} | {b:<{row_2_maxlen}}" for (a, b) in match_table.items()]))
+    print()
