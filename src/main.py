@@ -1,3 +1,4 @@
+import configparser
 import socket
 
 from dnslib import (
@@ -8,11 +9,8 @@ from dnslib import (
 )
 
 from utils import (
-    DEFAULT_DNS_IP,
     DNS_PORT,
-    HOST_IP,
     MSS,
-    RESPONSE_TTL,
     RedirectToDefaultServer,
     build_match_table,
     get_query_domain,
@@ -21,6 +19,9 @@ from utils import (
     print_match_table,
     send_and_recv_data,
 )
+
+HOSTS_FILENAME = "./custom_hosts"
+CONF_FILENAME = "./dns_server.conf"
 
 match_table: dict[str, str] = dict()
 
@@ -64,8 +65,18 @@ def server_main():
 
 
 if __name__ == "__main__":
-    with open("./custom_hosts", "r") as fin:
+    with open(HOSTS_FILENAME, "r") as fin:
         match_table = build_match_table(fin.readlines())
+
+    config = configparser.ConfigParser()
+    config.read(CONF_FILENAME)
+
+    try:
+        DEFAULT_DNS_IP = config["DNS"]["default_dns_ip"]
+        HOST_IP = config["DNS"]["host_ip"]
+        RESPONSE_TTL = int(config["DNS"]["response_ttl"])
+    except Exception as e:
+        print("Error while reading conf:", e)
 
     print_match_table(match_table)
 

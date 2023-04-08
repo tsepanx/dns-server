@@ -8,11 +8,8 @@ from dnslib import (
     DNSRecord,
 )
 
-DEFAULT_DNS_IP = "192.168.1.1"
-HOST_IP = "127.0.0.1"
 DNS_PORT = 53
 MSS = 1024
-RESPONSE_TTL = 60
 
 
 class RedirectToDefaultServer(Exception):

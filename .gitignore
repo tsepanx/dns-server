@@ -9,4 +9,5 @@ __pycache__/
 
 !assets/*
 
-custom_hosts
+*hosts
+dns_server.conf
