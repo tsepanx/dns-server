@@ -4,7 +4,6 @@ from dnslib import (
     QTYPE,
     RR,
     A,
-    DNSQuestion,
     DNSRecord,
 )
 
@@ -14,47 +13,30 @@ from utils import (
     HOST_IP,
     MSS,
     RESPONSE_TTL,
+    RedirectToDefaultServer,
     build_match_table,
+    get_query_domain,
     match_by_any_regex,
     print_log,
     print_match_table,
+    send_and_recv_data, HandleResult,
 )
 
 match_table: dict[str, str] = dict()
 
 
-def send_and_recv_data(data: bytes, target_host: str, target_port: int) -> bytes:
-    dns_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    dns_sock.sendto(data, (target_host, target_port))
-
-    response_data, _ = dns_sock.recvfrom(MSS)
-    return response_data
-
-
-def handle_dns_request(data: bytes, _: str):
-    dns_resp = DNSRecord.parse(data)
-
-    dns_question: DNSQuestion = dns_resp.questions[0]
-    qname = str(dns_question.qname)[:-1]  # Remove "." in the end
+def handle_dns_request(request_dns_record: DNSRecord) -> (DNSRecord, str):
+    qname = get_query_domain(request_dns_record)
 
     matched_regex, matched_ip = match_by_any_regex(match_table, qname)
 
-    if matched_ip:
-        reply = dns_resp.reply()
-        reply.add_answer(RR(qname, QTYPE.A, rdata=A(matched_ip), ttl=RESPONSE_TTL))
+    if not matched_ip:
+        raise RedirectToDefaultServer
 
-        response_data = reply.pack()
-        dns_resp = reply
-        is_redirected = False
-    else:
-        # Redirect to default DNS server
-        response_data = send_and_recv_data(data, DEFAULT_DNS_IP, DNS_PORT)
+    reply = request_dns_record.reply()
+    reply.add_answer(RR(qname, QTYPE.A, rdata=A(matched_ip), ttl=RESPONSE_TTL))
 
-        dns_resp = DNSRecord.parse(response_data)
-        is_redirected = True
-
-    print_log(dns_resp, qname, matched_regex, is_redirected)
-    return response_data
+    return reply, matched_regex
 
 
 def server_main():
@@ -66,9 +48,19 @@ def server_main():
 
     while True:
         data, addr = sock.recvfrom(MSS)
-        response = handle_dns_request(data, addr)
+        request_record = DNSRecord.parse(data)
+        qname = get_query_domain(request_record)
 
-        sock.sendto(response, addr)
+        try:
+            response_record, matched_regex = handle_dns_request(request_record)
+            print_log(response_record, qname, matched_regex, False)
+        except RedirectToDefaultServer:
+            response_data = send_and_recv_data(data, DEFAULT_DNS_IP, DNS_PORT)
+            response_record = DNSRecord.parse(response_data)
+
+            print_log(response_record, qname, None, True)
+
+        sock.sendto(response_record.pack(), addr)
 
 
 if __name__ == "__main__":

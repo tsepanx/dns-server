@@ -1,4 +1,6 @@
 import re
+import socket
+from dataclasses import dataclass
 
 from dnslib import (
     QTYPE,
@@ -12,6 +14,31 @@ HOST_IP = "127.0.0.1"
 DNS_PORT = 53
 MSS = 1024
 RESPONSE_TTL = 60
+
+
+class RedirectToDefaultServer(Exception):
+    pass
+
+
+@dataclass
+class HandleResult:
+    response_record: DNSRecord
+    matched_regex: str | None
+
+
+def send_and_recv_data(data: bytes, target_host: str, target_port: int) -> bytes:
+    dns_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    dns_sock.sendto(data, (target_host, target_port))
+
+    response_data, _ = dns_sock.recvfrom(MSS)
+    return response_data
+
+
+def get_query_domain(request_dns_record: DNSRecord) -> str:
+    dns_question: DNSQuestion = request_dns_record.questions[0]
+    qname = str(dns_question.qname)[:-1]  # Remove "." in the end
+
+    return qname
 
 
 def print_log(
@@ -30,11 +57,8 @@ def print_log(
     atypes_str = resources_types_to_str(dns_record.rr)
 
     answers_ipv4 = list(filter(lambda x: x.rtype == QTYPE.A, dns_record.rr))
-    # if dns_record.rr:
     if answers_ipv4:
         resp_ip = str(answers_ipv4[0].rdata)
-        # resp_ip = str(list(map(lambda x: x.rdata, dns_record.rr)))
-        # resp_ip = str(dns_record.a.rdata)
     else:
         resp_ip = ""
 
@@ -54,7 +78,7 @@ def print_log(
     atypes_str = limit_str(atypes_str, atypes_maxlen)
 
     print(
-        f"{qtypes_str:<5} "
+        # f"{qtypes_str:<5} "
         f"{qname:<{qname_maxlen}} = "
         f"{resp_ip:<{resp_ip_maxlen}} | "
         f"{matched_regex:<{matched_regex_maxlen}} | "
@@ -105,5 +129,7 @@ def print_match_table(match_table: dict[str, str]):
     row_1_maxlen = 25
     row_2_maxlen = 20
     print(f"{'REGEX':<{row_1_maxlen}} | {'MATCH':<{row_2_maxlen}}\n")
-    print("\n".join([f"{a:<{row_1_maxlen}} | {b:<{row_2_maxlen}}" for (a, b) in match_table.items()]))
+    print(
+        "\n".join([f"{a:<{row_1_maxlen}} | {b:<{row_2_maxlen}}" for (a, b) in match_table.items()])
+    )
     print()
