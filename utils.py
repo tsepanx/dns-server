@@ -1,82 +1,46 @@
-import socket
-import struct
-from dataclasses import dataclass
-from typing import Literal
-
-import dnslib
+from dnslib import DNSRecord, RR, QTYPE, DNSQuestion
 
 
-@dataclass
-class DNSQuestionIPv4:
-    domain_name: str
-    query_type: Literal["A", "AAAA"]
+REDIRECT_DNS_IP = "192.168.1.1"
+HOST_IP = '127.0.0.1'
+HOST_PORT = 53
+MSS = 1024
+RESPONSE_TTL = 60
 
 
-@dataclass
-class DNSAnswerIPv4:
-    domain_name: str
-    query_type: Literal["A", "AAAA"]
+def print_log(dns_record: DNSRecord, qname: str, matched_regex: str | None, is_redirected: bool = False):
+    def resources_types_to_str(resources: list[RR]) -> str:
+        map_f = lambda x: QTYPE[x.qtype if isinstance(x, DNSQuestion) else x.rtype]
+        return ",".join((map(map_f, resources)))
 
-    ttl: int
-    ip_addr: str
+    def limit_str(s: str, maxlen: int) -> str:
+        if len(s) > maxlen:
+            return s[:maxlen - 2] + ".."
+        return s
 
+    qtypes_str = resources_types_to_str(dns_record.questions)
+    atypes_str = resources_types_to_str(dns_record.rr)
 
-@dataclass
-class DNSQueryIPv4:
-    transaction_id: int
-    flags: int
-    questions_count: int
-    answers_count: int
-    authority_count: int
-    additional_count: int
+    if dns_record.rr:
+        ip_addr_str = str(dns_record.a.rdata)
+    else:
+        ip_addr_str = ""
 
-    questions: list[DNSQuestionIPv4] | None
-    answers: list[DNSAnswerIPv4] | None
-    # authorities: list[DNSAuthorityIPv4] | None
-    # additional: list[...] | None
+    if not is_redirected:
+        ip_addr_str += f" '{matched_regex or 'M'}'"
 
+    ip_addr_maxlen = 35
+    ip_addr_str = limit_str(ip_addr_str, ip_addr_maxlen)
 
-def parse_domain(data: bytes, ptr: int) -> (str, int):
-    domain_parts = []
-    while data[ptr] != 0:
-        next_part_len = data[ptr]
-        domain_parts.append(data[ptr + 1: ptr + next_part_len + 1])
-        ptr += next_part_len + 1
+    qname_maxlen = 30
+    qname = limit_str(qname, qname_maxlen)
 
-    domain_name = ".".join(map(lambda x: x.decode("utf-8"), domain_parts))
-    return domain_name, ptr
+    atypes_maxlen = 15
+    atypes_str = limit_str(atypes_str, atypes_maxlen)
 
+    print(f"{qtypes_str:<5} {qname:<{qname_maxlen}} = {ip_addr_str:<{ip_addr_maxlen}} | ({qtypes_str:<5} -> {atypes_str:<{atypes_maxlen}})", end="")
 
-def parse_query(data: bytes) -> DNSQueryIPv4:
-    fields = struct.Struct('!HHHHHH').unpack(data[:12])
-    query_obj = DNSQueryIPv4(*fields)
-
-    ptr = 0
-
-    for i in range(query_obj.questions_count):
-        qname, ptr = parse_domain(data, ptr)
-        qtype = struct.unpack('!H', data[ptr + 1:ptr + 3])[0]
-
-        question = DNSQuestionIPv4(domain_name=qname, query_type=qtype)
-        query_obj.questions.append(question)
-    for i in range(query_obj.answers_count):
-        atype = struct.unpack('!H', response[ptr:ptr + 2])[0]
-        if atype == 1:  # Type A record
-            answer_length = struct.unpack('!H', response[ptr + 10:ptr + 12])[0]
-            answer = response[ptr + 12:ptr + 12 + answer_length]
-            ip_addr = socket.inet_ntoa(answer)
-
-        answer = DNSAnswerIPv4()
-
-    return query_obj
-
-
-if __name__ == '__main__':
-    response = b'#\x1c\x81\x80\x00\x01\x00\x01\x00\x03\x00\x02\tarchlinux\x03org\x00\x00\x01\x00\x01\xc0\x0c\x00\x01' \
-               b'\x00\x01\x00\x00\x0e\x10\x00\x04_\xd9\xa3\xf6\xc0\x0c\x00\x02\x00\x01\x00\x00\x04\x8c\x00\x19' \
-               b'\x08hydrogen\x02ns\x07hetzner\x03com\x00\xc0\x0c\x00\x02\x00\x01\x00\x00\x04\x8c\x00\x16\x06helium' \
-               b'\x02ns\x07hetzner\x02de\x00\xc0\x0c\x00\x02\x00\x01\x00\x00\x04\x8c\x00\t\x06oxygen\xc0D\xc0\x82\x00' \
-               b'\x01\x00\x01\x00\x029\xc8\x00\x04X\xc6\xe5\xc0\xc0;\x00\x01\x00\x01\x00\x029\xc8\x00\x04\xd5\x85db '
-
-    query = parse_query(response)
-    print(query)
+    if is_redirected:
+        print(f" | -> {REDIRECT_DNS_IP}")
+    else:
+        print()
