@@ -29,6 +29,9 @@ match_table: dict[str, str] = dict()
 def handle_dns_request(request_dns_record: DNSRecord) -> (DNSRecord, str):
     qname = get_query_domain(request_dns_record)
 
+    if request_dns_record.questions[0].qtype not in [QTYPE.A, QTYPE.AAAA]:
+        print(request_dns_record.questions)
+
     matched_regex, matched_ip = match_by_any_regex(match_table, qname)
 
     if not matched_ip:
@@ -49,7 +52,13 @@ def server_main():
 
     while True:
         data, addr = sock.recvfrom(MSS)
-        request_record = DNSRecord.parse(data)
+
+        try:
+            request_record = DNSRecord.parse(data)
+        except dnslib.dns.DNSError:
+            print(f"Unknown packet received: {data, addr}")
+            continue
+
         qname = get_query_domain(request_record)
 
         try:
