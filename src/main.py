@@ -1,4 +1,4 @@
-import configparser
+import logging
 import socket
 
 from dnslib import (
@@ -9,19 +9,23 @@ from dnslib import (
 )
 from dnslib.dns import DNSError
 
-from utils import (
+from config import (
     DNS_PORT,
+    HOST_IP,
+    HOSTS_FILE,
     MSS,
+    NAMESERVERS,
+    RESPONSE_TTL,
+)
+from utils import (
     RedirectToDefaultServer,
     build_match_table,
     get_query_domain,
+    log_query,
     match_by_any_regex,
-    print_log,
-    print_match_table,
+    match_table_str,
     send_and_recv_data,
 )
-
-CONF_FILENAME = "./dns_server.conf"
 
 match_table: dict[str, str] = dict()
 
@@ -47,9 +51,6 @@ def server_main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((HOST_IP, DNS_PORT))
 
-    print(f"DEFAULT SERVER: {NAMESERVERS[0]}")
-    print(f"BIND: {HOST_IP}:{DNS_PORT}\n")
-
     while True:
         data, addr = sock.recvfrom(MSS)
 
@@ -63,32 +64,31 @@ def server_main():
 
         try:
             response_record, matched_regex = handle_dns_request(request_record)
-            print_log(response_record, qname, matched_regex, is_redirected=False)
+            log_query(response_record, qname, matched_regex, is_redirected=False)
         except RedirectToDefaultServer:
             response_data = send_and_recv_data(data, NAMESERVERS[0], DNS_PORT)
             response_record = DNSRecord.parse(response_data)
 
-            print_log(response_record, qname, None, is_redirected=True)
+            log_query(response_record, qname, None, is_redirected=True)
 
         sock.sendto(response_record.pack(), addr)
 
 
 if __name__ == "__main__":
-    config = configparser.ConfigParser()
-    config.read(CONF_FILENAME)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",
+    )
 
-    try:
-        NAMESERVERS: list[str] = config["DNS"]["nameservers"].split(",")
-        HOST_IP = config["DNS"]["host_ip"]
-        RESPONSE_TTL = int(config["DNS"]["response_ttl"])
-        HOSTS_FILENAME = config["DNS"]["hosts_filename"]
-    except Exception as e:
-        print("Error while reading conf:", e)
-
-
-    with open(HOSTS_FILENAME, "r") as fin:
+    with open(HOSTS_FILE, "r") as fin:
         match_table = build_match_table(fin.readlines())
 
-    print_match_table(match_table)
+    logger = logging.getLogger(__name__)
+
+    logger.info(f"DEFAULT SERVER: {NAMESERVERS[0]}")
+    logger.info(f"BIND: {HOST_IP}:{DNS_PORT}\n")
+    logger.info(
+        match_table_str(match_table)
+    )
 
     server_main()

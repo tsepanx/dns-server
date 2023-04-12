@@ -1,4 +1,5 @@
 import datetime
+import logging
 import re
 import socket
 
@@ -9,15 +10,21 @@ from dnslib import (
     DNSRecord,
 )
 
-DNS_PORT = 53
-MSS = 1024
-
-LOGFILE_PATH = "dns_server.log"
-LOG_TO_FILE = True
+from config import MSS
 
 
 class RedirectToDefaultServer(Exception):
     pass
+
+
+def get_root_logger():
+    import logging
+
+    from systemd import journal
+
+    logger = logging.getLogger(__name__)
+    logger.addHandler(journal.JournaldLogHandler())
+    return logger
 
 
 def send_and_recv_data(data: bytes, target_host: str, target_port: int) -> bytes:
@@ -35,12 +42,11 @@ def get_query_domain(request_dns_record: DNSRecord) -> str:
     return qname
 
 
-def print_log(
+def log_query(
     dns_record: DNSRecord,
     qname: str,
     matched_regex: str | None,
     is_redirected: bool = False,
-    to_file=LOG_TO_FILE,
 ):
     def resources_types_to_str(resources: list[RR]) -> str:
         map_f = lambda x: QTYPE[x.qtype if isinstance(x, DNSQuestion) else x.rtype]
@@ -76,18 +82,14 @@ def print_log(
     atypes_str = limit_str(atypes_str, atypes_maxlen)
 
     result_line = (
-        f"{datetime.datetime.now().replace(microsecond=0)} | "
+        # f"{datetime.datetime.now().replace(microsecond=0)} | "
         f"{qname:<{qname_maxlen}} = "
         f"{resp_ip:<{resp_ip_maxlen}} | "
         f"{matched_regex:<{matched_regex_maxlen}} | "
         f"{qtypes_str:<5} -> {atypes_str:<{atypes_maxlen}}"
     )
 
-    if to_file:
-        with open(LOGFILE_PATH, "a") as fout:
-            fout.write(result_line + "\n")
-    else:
-        print(result_line)
+    logging.info(result_line)
 
 
 def match_by_any_regex(regex_dict: dict[str, str], match_by: str):
@@ -128,11 +130,15 @@ def build_match_table(file_lines: list[str]) -> dict[str, str]:
     return match_table
 
 
-def print_match_table(match_table: dict[str, str]):
+def match_table_str(match_table: dict[str, str]) -> str:
     row_1_maxlen = 25
     row_2_maxlen = 20
-    print(f"{'REGEX':<{row_1_maxlen}} | {'MATCH':<{row_2_maxlen}}\n")
-    print(
-        "\n".join([f"{a:<{row_1_maxlen}} | {b:<{row_2_maxlen}}" for (a, b) in match_table.items()])
+
+    s = (
+        f"{'REGEX':<{row_1_maxlen}} | {'MATCH':<{row_2_maxlen}}\n"
+        + "\n".join(
+            [f"{a:<{row_1_maxlen}} | {b:<{row_2_maxlen}}" for (a, b) in match_table.items()]
+        )
+        + "\n"
     )
-    print()
+    return s
