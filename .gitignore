@@ -9,6 +9,6 @@ __pycache__/
 
 !assets/*
 
-*hosts
+*hosts.txt
 *.conf
 *.log

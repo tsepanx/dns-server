@@ -21,7 +21,6 @@ from utils import (
     send_and_recv_data,
 )
 
-HOSTS_FILENAME = "./custom_hosts"
 CONF_FILENAME = "./dns_server.conf"
 
 match_table: dict[str, str] = dict()
@@ -75,9 +74,6 @@ def server_main():
 
 
 if __name__ == "__main__":
-    with open(HOSTS_FILENAME, "r") as fin:
-        match_table = build_match_table(fin.readlines())
-
     config = configparser.ConfigParser()
     config.read(CONF_FILENAME)
 
@@ -85,8 +81,13 @@ if __name__ == "__main__":
         NAMESERVERS: list[str] = config["DNS"]["nameservers"].split(",")
         HOST_IP = config["DNS"]["host_ip"]
         RESPONSE_TTL = int(config["DNS"]["response_ttl"])
+        HOSTS_FILENAME = config["DNS"]["hosts_filename"]
     except Exception as e:
         print("Error while reading conf:", e)
+
+
+    with open(HOSTS_FILENAME, "r") as fin:
+        match_table = build_match_table(fin.readlines())
 
     print_match_table(match_table)
 
