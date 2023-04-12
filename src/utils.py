@@ -1,3 +1,4 @@
+import datetime
 import re
 import socket
 
@@ -10,6 +11,9 @@ from dnslib import (
 
 DNS_PORT = 53
 MSS = 1024
+
+LOGFILE_PATH = "dns_server.log"
+LOG_TO_FILE = True
 
 
 class RedirectToDefaultServer(Exception):
@@ -32,7 +36,11 @@ def get_query_domain(request_dns_record: DNSRecord) -> str:
 
 
 def print_log(
-    dns_record: DNSRecord, qname: str, matched_regex: str | None, is_redirected: bool = False
+    dns_record: DNSRecord,
+    qname: str,
+    matched_regex: str | None,
+    is_redirected: bool = False,
+    to_file=LOG_TO_FILE,
 ):
     def resources_types_to_str(resources: list[RR]) -> str:
         map_f = lambda x: QTYPE[x.qtype if isinstance(x, DNSQuestion) else x.rtype]
@@ -67,14 +75,19 @@ def print_log(
     atypes_maxlen = 30
     atypes_str = limit_str(atypes_str, atypes_maxlen)
 
-    print(
-        # f"{qtypes_str:<5} "
+    result_line = (
+        f"{datetime.datetime.now().replace(microsecond=0)} | "
         f"{qname:<{qname_maxlen}} = "
         f"{resp_ip:<{resp_ip_maxlen}} | "
         f"{matched_regex:<{matched_regex_maxlen}} | "
-        f"{qtypes_str:<5} -> {atypes_str:<{atypes_maxlen}}",
-        # end="",
+        f"{qtypes_str:<5} -> {atypes_str:<{atypes_maxlen}}"
     )
+
+    if to_file:
+        with open(LOGFILE_PATH, "a") as fout:
+            fout.write(result_line + "\n")
+    else:
+        print(result_line)
 
 
 def match_by_any_regex(regex_dict: dict[str, str], match_by: str):

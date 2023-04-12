@@ -7,6 +7,7 @@ from dnslib import (
     A,
     DNSRecord,
 )
+from dnslib.dns import DNSError
 
 from utils import (
     DNS_PORT,
@@ -47,7 +48,7 @@ def server_main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((HOST_IP, DNS_PORT))
 
-    print(f"DEFAULT SERVER: {DEFAULT_DNS_IP}")
+    print(f"DEFAULT SERVER: {NAMESERVERS[0]}")
     print(f"BIND: {HOST_IP}:{DNS_PORT}\n")
 
     while True:
@@ -55,7 +56,7 @@ def server_main():
 
         try:
             request_record = DNSRecord.parse(data)
-        except dnslib.dns.DNSError:
+        except DNSError:
             print(f"Unknown packet received: {data, addr}")
             continue
 
@@ -63,12 +64,12 @@ def server_main():
 
         try:
             response_record, matched_regex = handle_dns_request(request_record)
-            print_log(response_record, qname, matched_regex, False)
+            print_log(response_record, qname, matched_regex, is_redirected=False)
         except RedirectToDefaultServer:
-            response_data = send_and_recv_data(data, DEFAULT_DNS_IP, DNS_PORT)
+            response_data = send_and_recv_data(data, NAMESERVERS[0], DNS_PORT)
             response_record = DNSRecord.parse(response_data)
 
-            print_log(response_record, qname, None, True)
+            print_log(response_record, qname, None, is_redirected=True)
 
         sock.sendto(response_record.pack(), addr)
 
@@ -81,7 +82,7 @@ if __name__ == "__main__":
     config.read(CONF_FILENAME)
 
     try:
-        DEFAULT_DNS_IP = config["DNS"]["default_dns_ip"]
+        NAMESERVERS: list[str] = config["DNS"]["nameservers"].split(",")
         HOST_IP = config["DNS"]["host_ip"]
         RESPONSE_TTL = int(config["DNS"]["response_ttl"])
     except Exception as e:

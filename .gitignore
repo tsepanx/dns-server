@@ -10,4 +10,5 @@ __pycache__/
 !assets/*
 
 *hosts
-dns_server.conf
+*.conf
+*.log
